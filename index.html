@@ -25,7 +25,6 @@
       font-family: sans-serif;
     }
 
-    /* Área visible completa */
     #viewer {
       position: relative;
       width: 100vw;
@@ -34,7 +33,6 @@
       background: #000;
     }
 
-    /* Esta capa es la que se amplía y se mueve */
     #zoom-layer {
       position: absolute;
       inset: 0;
@@ -49,21 +47,39 @@
       cursor: grabbing;
     }
 
-    /* Flipbook ocupa toda la pantalla */
     #flipbook {
       width: 100vw;
       height: 100vh;
       margin: 0;
     }
 
-    /* Mejor centrado visual */
     .stf__parent,
     .stf__wrapper {
       width: 100% !important;
       height: 100% !important;
     }
 
-    /* Botón opcional para resetear zoom */
+    /* Páginas HTML para evitar la pérdida de calidad del canvas */
+    .page {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .page img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: none;
+      image-rendering: auto;
+    }
+
     #resetZoomBtn {
       position: absolute;
       right: 14px;
@@ -175,14 +191,29 @@
 
     let pageFlip = null;
     let pages = [];
+    let basePageWidth = 1000;
+    let basePageHeight = 1414;
+    let resizeTimer = null;
 
     function imageExists(src) {
       return new Promise((resolve) => {
         const img = new Image();
-
         img.onload = () => resolve(true);
         img.onerror = () => resolve(false);
+        img.src = src;
+      });
+    }
 
+    function getImageSize(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          resolve({
+            width: img.naturalWidth,
+            height: img.naturalHeight
+          });
+        };
+        img.onerror = reject;
         img.src = src;
       });
     }
@@ -204,12 +235,32 @@
       return foundPages;
     }
 
+    function buildHtmlPages(pageList) {
+      flipbookElement.innerHTML = "";
+
+      pageList.forEach((src, i) => {
+        const page = document.createElement("div");
+        page.className = "page";
+        page.setAttribute("data-page-index", i);
+
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = `Página ${i + 1}`;
+        img.draggable = false;
+        img.loading = "eager";
+
+        page.appendChild(img);
+        flipbookElement.appendChild(page);
+      });
+    }
+
     async function createFlipbook() {
       if (pageFlip) {
         pageFlip.destroy();
-        flipbookElement.innerHTML = "";
+        pageFlip = null;
       }
 
+      flipbookElement.innerHTML = "";
       pages = await getPages();
 
       if (!pages.length) {
@@ -217,14 +268,26 @@
         return;
       }
 
+      try {
+        const firstSize = await getImageSize(pages[0]);
+        basePageWidth = firstSize.width;
+        basePageHeight = firstSize.height;
+      } catch (error) {
+        console.warn("No se pudo obtener el tamaño real de la primera imagen, se usarán dimensiones por defecto.");
+        basePageWidth = 1000;
+        basePageHeight = 1414;
+      }
+
+      buildHtmlPages(pages);
+
       pageFlip = new St.PageFlip(flipbookElement, {
-        width: 1000,
-        height: 1414,
+        width: basePageWidth,
+        height: basePageHeight,
         size: "stretch",
         minWidth: 280,
-        maxWidth: 4000,
+        maxWidth: basePageWidth,
         minHeight: 400,
-        maxHeight: 4000,
+        maxHeight: basePageHeight,
         usePortrait: true,
         autoSize: false,
         showCover: false,
@@ -237,7 +300,8 @@
         disableFlipByClick: false
       });
 
-      pageFlip.loadFromImages(pages);
+      const htmlPages = flipbookElement.querySelectorAll(".page");
+      pageFlip.loadFromHTML(htmlPages);
 
       pageFlip.on("init", () => {
         forcePortrait();
@@ -250,7 +314,11 @@
 
     function forcePortrait() {
       if (pageFlip && typeof pageFlip.updateState === "function") {
-        pageFlip.updateState({ orientation: "portrait" });
+        try {
+          pageFlip.updateState({ orientation: "portrait" });
+        } catch (e) {
+          // En algunas versiones puede no aplicar; se ignora.
+        }
       }
     }
 
@@ -264,6 +332,7 @@
       }
 
       if (!pageFlip) return;
+
       if (e.key === "ArrowRight") pageFlip.flipNext();
       if (e.key === "ArrowLeft") pageFlip.flipPrev();
 
@@ -277,7 +346,7 @@
     // =========================
     let scale = 1;
     const minScale = 1;
-    const maxScale = 4;
+    const maxScale = 1.5; // limitar para evitar blur por escalado excesivo
 
     let translateX = 0;
     let translateY = 0;
@@ -300,6 +369,7 @@
       const rect = viewer.getBoundingClientRect();
       const maxX = ((rect.width * nextScale) - rect.width) / 2;
       const maxY = ((rect.height * nextScale) - rect.height) / 2;
+
       return {
         minX: -maxX,
         maxX: maxX,
@@ -319,8 +389,7 @@
         translateY = clamp(translateY, bounds.minY, bounds.maxY);
       }
 
-      zoomLayer.style.transform =
-        `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+      zoomLayer.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
     }
 
     function zoomTo(newScale, centerX, centerY) {
@@ -333,7 +402,6 @@
 
       const cx = centerX - rect.left - rect.width / 2;
       const cy = centerY - rect.top - rect.height / 2;
-
       const scaleRatio = scale / prevScale;
 
       translateX = (translateX - cx) * scaleRatio + cx;
@@ -350,6 +418,7 @@
     }
 
     resetZoomBtn.addEventListener("click", resetZoom);
+
     viewer.addEventListener("dblclick", () => {
       if (!imageViewer.classList.contains("active")) {
         openOriginalViewer();
@@ -361,7 +430,7 @@
       e.preventDefault();
 
       const delta = -e.deltaY;
-      const zoomStep = delta > 0 ? 0.2 : -0.2;
+      const zoomStep = delta > 0 ? 0.15 : -0.15;
       zoomTo(scale + zoomStep, e.clientX, e.clientY);
     }, { passive: false });
 
@@ -466,9 +535,20 @@
     window.addEventListener("resize", () => {
       applyTransform();
 
-      if (pageFlip) {
-        createFlipbook();
-      }
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const currentIndex = pageFlip ? pageFlip.getCurrentPageIndex() : 0;
+
+        createFlipbook().then(() => {
+          if (pageFlip && typeof currentIndex === "number") {
+            try {
+              pageFlip.turnToPage(currentIndex);
+            } catch (e) {
+              // ignorar si la versión no soporta el método
+            }
+          }
+        });
+      }, 250);
     });
 
     // =========================
@@ -534,7 +614,6 @@
       const rect = imageViewer.getBoundingClientRect();
       const cx = centerX - rect.left - rect.width / 2;
       const cy = centerY - rect.top - rect.height / 2;
-
       const scaleRatio = originalScale / prevScale;
 
       originalX = (originalX - cx) * scaleRatio + cx;
