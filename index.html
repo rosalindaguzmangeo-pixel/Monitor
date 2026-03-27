@@ -346,7 +346,7 @@
     // =========================
     let scale = 1;
     const minScale = 1;
-    const maxScale = 4; // limitar para evitar blur por escalado excesivo
+    const maxScale = 6; // limitar para evitar blur por escalado excesivo
 
     let translateX = 0;
     let translateY = 0;
@@ -430,7 +430,7 @@
       e.preventDefault();
 
       const delta = -e.deltaY;
-      const zoomStep = delta > 0 ? 0.15 : -0.15;
+      const zoomStep = delta > 0 ? 0.25 : -0.25;
       zoomTo(scale + zoomStep, e.clientX, e.clientY);
     }, { passive: false });
 
@@ -556,7 +556,7 @@
     // =========================
     let originalScale = 1;
     const originalMinScale = 1;
-    const originalMaxScale = 8;
+    const originalMaxScale = 10;
 
     let originalX = 0;
     let originalY = 0;
